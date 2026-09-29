@@ -1,0 +1,6 @@
+account_id,amount,merchant,category,channel
+ACC123,50.25,Starbucks,Food,Online
+ACC456,120.00,Target,Retail,In-Store
+ACC789,15.50,Netflix,Entertainment,Online
+ACC123,10.00,Uber,Transport,Mobile
+ACC456,5.25,7-Eleven,Food,In-Store
