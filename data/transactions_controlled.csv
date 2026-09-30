@@ -1,0 +1,11 @@
+transaction_id,account_id,timestamp,amount,merchant,category,channel,is_anomaly_label
+89b17c88-d521-4b04-ab07-80511e76dbea,ACC-1031,2026-09-29T09:04:21.931262+00:00,102.4,Steam,Digital Credits,Online,No
+90e6a837-ed13-4eb4-a32e-51b7f8d813ec,ACC-1037,2026-09-29T09:06:21.931262+00:00,72.77,Amazon,Retail,ATM,No
+f1938d14-f9f2-4609-ad77-bf2379d1507d,ACC-1030,2026-09-29T09:08:21.931262+00:00,48.56,Agnel Cafeteria,Digital Credits,POS,No
+0ea9ef5d-f833-4ed0-a60b-d3b702c0fef5,ACC-1046,2026-09-29T09:10:21.931262+00:00,68.78,Agnel Cafeteria,Food & Dining,Online,No
+61334a6b-fb6d-405c-94bd-0c4f6a19366a,ACC-1048,2026-09-29T09:12:21.931262+00:00,71.33,Amazon,Transport,ATM,No
+c1252da5-57e7-4ac9-8aca-3ac2e40e952c,ACC-1011,2026-09-29T09:14:21.931262+00:00,100.02,Amazon,Retail,POS,No
+651c788a-5546-4f53-965e-1f4ecd27a3cc,ACC-1002,2026-09-29T09:16:21.931262+00:00,144.54,Amazon,Food & Dining,Online,No
+8889e53b-5b15-4528-819c-e7c69cb2155d,ACC-1037,2026-09-29T09:18:21.931262+00:00,11496.98,Unknown Overseas Merchant,Electronics,Online,Yes
+6b1567ce-3fcf-476a-8eab-42b12cb68dca,ACC-1010,2026-09-29T09:20:21.931262+00:00,28.41,Shree Gokul Fast Food,Digital Credits,Online,No
+ad09c3b2-8100-4bbc-946a-a8ea170caf0f,ACC-1047,2026-09-29T09:22:21.931262+00:00,146.94,Uber,Digital Credits,Online,No
