@@ -203,8 +203,17 @@ document.addEventListener('DOMContentLoaded', () => {
       setPlaying(false);
       return;
     }
+    if (data.type === 'rates_updated') {
+      if (data.rates) {
+        updateLiveRateCards(data.rates, data.timestamp);
+      }
+      return;
+    }
     if (data.type === 'connected') {
       kafkaIndicator.className = 'status-dot dot-online';
+      if (data.rates) {
+        updateLiveRateCards(data.rates);
+      }
       return;
     }
     if (data.type === 'system_log') {
@@ -486,6 +495,41 @@ document.addEventListener('DOMContentLoaded', () => {
     };
   }
 
+  function updateLiveRateCards(newRates, timestamp) {
+    const prevRates = { ...state.exchangeRates };
+    state.exchangeRates = { ...newRates };
+
+    const ratesLastUpdated = document.getElementById('rates-last-updated');
+    if (ratesLastUpdated) {
+      const now = timestamp ? new Date(timestamp) : new Date();
+      ratesLastUpdated.textContent = `Updated: ${now.toLocaleTimeString()}`;
+    }
+
+    const rateCards = document.querySelectorAll('.rate-card');
+    rateCards.forEach(card => {
+      const curr = card.dataset.curr;
+      if (curr && newRates[curr] !== undefined) {
+        const newVal = newRates[curr];
+        const oldVal = prevRates[curr];
+        const valElem = card.querySelector('.curr-val');
+        if (valElem) {
+          valElem.textContent = `₹${newVal.toFixed(2)}`;
+          
+          if (oldVal !== undefined && newVal !== oldVal) {
+            const isUp = newVal > oldVal;
+            card.classList.remove('rate-flash-up', 'rate-flash-down');
+            // Force DOM reflow for animation restart
+            void card.offsetWidth;
+            card.classList.add(isUp ? 'rate-flash-up' : 'rate-flash-down');
+            setTimeout(() => {
+              card.classList.remove('rate-flash-up', 'rate-flash-down');
+            }, 1200);
+          }
+        }
+      }
+    });
+  }
+
   // Load Status
   function checkStatus() {
     fetch('/api/status')
@@ -497,7 +541,7 @@ document.addEventListener('DOMContentLoaded', () => {
           kafkaIndicator.className = 'status-dot dot-pulse';
         }
         if (data.rates) {
-          state.exchangeRates = data.rates;
+          updateLiveRateCards(data.rates);
         }
         if (data.active_replay && !state.isPlaying) {
           setPlaying(true);

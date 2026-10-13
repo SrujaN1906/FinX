@@ -698,29 +698,72 @@ body {
   border-top: 1px solid var(--border-subtle);
 }
 
+.live-rates-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: var(--accent-emerald);
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--radius-full);
+}
+
 .rates-tag {
   font-size: 0.7rem;
-  color: var(--accent-emerald);
-  font-weight: 600;
-  text-transform: uppercase;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
 }
 
 .rates-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 0.4rem;
-  margin-top: 0.6rem;
+  gap: 0.5rem;
+  margin-top: 0.65rem;
 }
 
-.rate-badge {
-  font-size: 0.72rem;
-  font-family: var(--font-mono);
-  background: rgba(255, 255, 255, 0.04);
-  padding: 0.25rem 0.5rem;
-  border-radius: 4px;
+.rate-card {
+  display: flex;
+  flex-direction: column;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 0.45rem 0.65rem;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border-subtle);
-  color: #a5b4fc;
-  text-align: center;
+  transition: all 0.3s ease;
+}
+
+.rate-card .curr-label {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+}
+
+.rate-card .curr-val {
+  font-size: 0.95rem;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: #38bdf8;
+  transition: color 0.3s ease;
+}
+
+.rate-card.rate-flash-up {
+  border-color: rgba(16, 185, 129, 0.6);
+  background: rgba(16, 185, 129, 0.12);
+}
+
+.rate-card.rate-flash-up .curr-val {
+  color: #34d399;
+}
+
+.rate-card.rate-flash-down {
+  border-color: rgba(239, 68, 68, 0.6);
+  background: rgba(239, 68, 68, 0.12);
+}
+
+.rate-card.rate-flash-down .curr-val {
+  color: #f87171;
 }
 
 .txn-merchant {

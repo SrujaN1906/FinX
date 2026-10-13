@@ -231,19 +231,22 @@
         </div>
       </div>
 
-      <!-- Exchange Rate Reference Panel -->
+      <!-- Exchange Rate Reference Panel (Live Real-Time Forex Stream) -->
       <div class="rates-section">
         <div class="panel-header sub-header">
-          <h2 class="panel-title">Active Exchange Rates (Base: INR)</h2>
-          <span class="rates-tag">Automated Conversion</span>
+          <div class="panel-title-group">
+            <h2 class="panel-title">Active Exchange Rates (Base: INR ₹)</h2>
+            <span class="live-rates-badge"><span class="status-dot dot-online"></span> LIVE STREAM</span>
+          </div>
+          <span class="rates-tag" id="rates-last-updated">Updating...</span>
         </div>
         <div class="rates-grid" id="rates-grid">
-          <span class="rate-badge">1 USD = ₹86.50</span>
-          <span class="rate-badge">1 EUR = ₹93.80</span>
-          <span class="rate-badge">1 GBP = ₹110.20</span>
-          <span class="rate-badge">1 AED = ₹23.55</span>
-          <span class="rate-badge">1 SGD = ₹64.70</span>
-          <span class="rate-badge">1 CAD = ₹61.20</span>
+          <div class="rate-card" data-curr="USD"><span class="curr-label">1 USD</span><span class="curr-val">₹86.50</span></div>
+          <div class="rate-card" data-curr="EUR"><span class="curr-label">1 EUR</span><span class="curr-val">₹93.80</span></div>
+          <div class="rate-card" data-curr="GBP"><span class="curr-label">1 GBP</span><span class="curr-val">₹110.20</span></div>
+          <div class="rate-card" data-curr="AED"><span class="curr-label">1 AED</span><span class="curr-val">₹23.55</span></div>
+          <div class="rate-card" data-curr="SGD"><span class="curr-label">1 SGD</span><span class="curr-val">₹64.70</span></div>
+          <div class="rate-card" data-curr="CAD"><span class="curr-label">1 CAD</span><span class="curr-val">₹61.20</span></div>
         </div>
       </div>
     </section>
