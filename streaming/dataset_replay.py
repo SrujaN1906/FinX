@@ -1,9 +1,16 @@
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+import sys
 import csv
 import time
 import json
 import os
 import argparse
 from kafka import KafkaProducer
+
+if sys.stdout and hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
 
 def json_serializer(data):
     return json.dumps(data).encode('utf-8')

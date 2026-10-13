@@ -1,0 +1,18 @@
+# Virtual environments
+.venv/
+env/
+venv/
+ENV/
+
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDE and Editor settings
+.vscode/
+.idea/
+
+# Nested git clones / scratch
+FinX/
+*.log
