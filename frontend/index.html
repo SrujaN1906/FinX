@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>FinX - Real-Time Streaming & Financial Anomaly Detection</title>
-  <meta name="description" content="FinX Module 1 Live Demonstration: High-throughput Kafka ingestion and anomaly replay system">
+  <meta name="description" content="FinX: High-throughput Kafka ingestion, multi-currency normalization to INR, and real-time anomaly detection">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -24,8 +24,8 @@
         </svg>
       </div>
       <div>
-        <h1 class="brand-title">FinX <span class="badge-tag">Module 1: Ingestion</span></h1>
-        <p class="brand-subtitle">Real-Time Event Stream & Anomaly Replay Engine</p>
+        <h1 class="brand-title">FinX <span class="badge-tag">Global Ingestion</span></h1>
+        <p class="brand-subtitle">Real-Time Event Stream & Multi-Currency Anomaly Detection Engine</p>
       </div>
     </div>
 
@@ -38,39 +38,46 @@
       </div>
       <div class="telemetry-pill">
         <span class="status-dot dot-active"></span>
-        <span class="pill-label">Topic</span>
-        <span class="pill-value">finx-transactions</span>
+        <span class="pill-label">Base Currency</span>
+        <span class="pill-value text-emerald">INR (₹)</span>
       </div>
       <div class="telemetry-pill">
         <span class="status-dot dot-pulse"></span>
-        <span class="pill-label">Replay Engine</span>
+        <span class="pill-label">Detection Engine</span>
         <span class="pill-value" id="engine-status-text">Standby</span>
       </div>
     </div>
   </header>
 
-  <!-- Quick Action & Control Toolbar -->
+  <!-- Quick Action & Control Toolbar: File Upload & Speed -->
   <section class="controls-toolbar" aria-label="Streaming Controls">
     <div class="toolbar-actions">
-      <button id="btn-replay-controlled" class="btn btn-primary" title="Replay 10 controlled transactions containing 1 deliberate anomaly">
+      <!-- File Upload Input (Hidden) and Custom Button -->
+      <input type="file" id="csv-file-input" accept=".csv" class="file-input-hidden" aria-label="Upload CSV for anomaly detection">
+      
+      <button id="btn-upload-file" class="btn btn-primary" title="Select a CSV file to stream and analyze for anomalies">
+        <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="17 8 12 3 7 8"></polyline>
+          <line x1="12" y1="3" x2="12" y2="15"></line>
+        </svg>
+        Upload File for Detection
+      </button>
+
+      <span class="selected-file-badge" id="selected-file-badge">No file chosen</span>
+
+      <button id="btn-stream-default" class="btn btn-secondary" title="Quick sample stream (10 Controlled Transactions)">
         <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polygon points="5 3 19 12 5 21 5 3"></polygon>
         </svg>
-        Replay Controlled Dataset (10 Txns)
-      </button>
-
-      <button id="btn-replay-huge" class="btn btn-secondary" title="Replay 10,000 scale dataset at high speed">
-        <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path>
-        </svg>
-        Stream Scale Dataset (10k Txns)
+        Sample Data
       </button>
 
       <button id="btn-stop-replay" class="btn btn-danger" disabled title="Halt current stream">
         <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="6" y="6" width="12" height="12"></rect>
         </svg>
-        Stop Replay
+        Stop Stream
       </button>
 
       <button id="btn-clear-feed" class="btn btn-ghost" title="Clear event stream display">
@@ -82,13 +89,12 @@
       </button>
     </div>
 
-    <!-- Speed Controls -->
+    <!-- Speed Controls: Exactly 2 options (Realtime 1x & 2x Speed) -->
     <div class="toolbar-options">
-      <span class="option-label">Stream Pace:</span>
+      <span class="option-label">Playback Pace:</span>
       <div class="speed-selector" id="speed-selector">
-        <button class="speed-btn active" data-speed="1.0" id="speed-1x">1x (Realtime)</button>
-        <button class="speed-btn" data-speed="2.0" id="speed-2x">2x</button>
-        <button class="speed-btn" data-speed="5.0" id="speed-5x">5x (Turbo)</button>
+        <button class="speed-btn active" data-speed="1.0" id="speed-1x">i. Realtime</button>
+        <button class="speed-btn" data-speed="2.0" id="speed-2x">ii. 2x Speed</button>
       </div>
     </div>
   </section>
@@ -101,7 +107,7 @@
         <span class="metric-icon">📥</span>
       </div>
       <div class="metric-value" id="val-total-events">0</div>
-      <div class="metric-footer">Published to Kafka broker</div>
+      <div class="metric-footer" id="val-file-name-footer">Awaiting CSV upload</div>
     </div>
 
     <div class="metric-card" id="card-normal-events">
@@ -110,16 +116,16 @@
         <span class="metric-icon">✅</span>
       </div>
       <div class="metric-value text-success" id="val-normal-events">0</div>
-      <div class="metric-footer">Standard baseline activity</div>
+      <div class="metric-footer">Standard spending pattern</div>
     </div>
 
     <div class="metric-card card-alert-highlight" id="card-anomalies-detected">
       <div class="metric-header">
-        <span class="metric-title">Seeded Anomalies</span>
+        <span class="metric-title">Anomalies Detected</span>
         <span class="metric-icon">🚨</span>
       </div>
       <div class="metric-value text-danger" id="val-anomalies-detected">0</div>
-      <div class="metric-footer">Blueprint test scenarios verified</div>
+      <div class="metric-footer">Evaluated in converted INR</div>
     </div>
 
     <div class="metric-card" id="card-throughput">
@@ -128,16 +134,16 @@
         <span class="metric-icon">⚡</span>
       </div>
       <div class="metric-value text-cyan" id="val-throughput">0.0 <span class="metric-unit">msg/s</span></div>
-      <div class="metric-footer">Current processing velocity</div>
+      <div class="metric-footer">Non-blocking active velocity</div>
     </div>
 
-    <div class="metric-card" id="card-schema-health">
+    <div class="metric-card" id="card-currency-health">
       <div class="metric-header">
-        <span class="metric-title">Schema Compliance</span>
-        <span class="metric-icon">🛡️</span>
+        <span class="metric-title">Currency Normalizer</span>
+        <span class="metric-icon">💱</span>
       </div>
-      <div class="metric-value text-emerald" id="val-schema-health">100%</div>
-      <div class="metric-footer">7 of 7 required Blueprint attributes</div>
+      <div class="metric-value text-emerald" id="val-currency-health">Active</div>
+      <div class="metric-footer">Dual format: Original & ₹ INR</div>
     </div>
   </section>
 
@@ -145,12 +151,15 @@
   <aside id="anomaly-alert-banner" class="anomaly-banner hidden" aria-live="assertive">
     <div class="banner-icon-pulse">⚠️</div>
     <div class="banner-content">
-      <div class="banner-title">INJECTED ANOMALY CAUGHT IN LIVE STREAM!</div>
+      <div class="banner-title">FINANCIAL ANOMALY DETECTED IN STREAM!</div>
       <div class="banner-details" id="anomaly-banner-text">
-        Transaction <span class="mono" id="anomaly-txn-id">-</span> for <span class="highlight-val" id="anomaly-amount">$0.00</span> at <span class="mono" id="anomaly-merchant">-</span>
+        Transaction <span class="mono" id="anomaly-txn-id">-</span>: 
+        <span class="highlight-val" id="anomaly-inr">₹0.00</span> 
+        <span class="text-secondary" id="anomaly-orig">(Original: $0.00)</span> 
+        at <span class="mono" id="anomaly-merchant">-</span>
       </div>
-      <div class="banner-subtext">
-        Blueprint Module 1 Verification: Seeded scenario #8 confirmed. Extreme value outlier ready for Module 2 ML processing.
+      <div class="banner-subtext" id="anomaly-rationale-text">
+        Multi-currency anomaly evaluation triggered: high-value threshold or suspicious overseas routing flagged.
       </div>
     </div>
     <button class="banner-dismiss" id="btn-dismiss-banner" aria-label="Dismiss banner">&times;</button>
@@ -175,42 +184,42 @@
       <!-- Feed Container -->
       <div class="feed-container" id="feed-container">
         <div class="feed-empty-state" id="feed-empty-state">
-          <div class="empty-icon">📡</div>
-          <h3>Awaiting Kafka Event Stream</h3>
-          <p>Click <strong>"Replay Controlled Dataset"</strong> or run <code>python streaming/dataset_replay.py</code> to view live transactions.</p>
+          <div class="empty-icon">📁</div>
+          <h3>Awaiting CSV File Upload</h3>
+          <p>Click <strong>"Upload File for Detection"</strong> above to select any financial CSV, or click <strong>"Sample Data"</strong> to run a live test.</p>
         </div>
       </div>
     </section>
 
     <!-- Right Column: Visualization & Blueprint Schema Inspector -->
     <section class="panel inspector-panel">
-      <!-- Live Transaction Chart -->
+      <!-- Live Transaction Chart (INR) -->
       <div class="chart-section">
         <div class="panel-header sub-header">
-          <h2 class="panel-title">Transaction Amount Monitor ($ USD)</h2>
-          <span class="badge-sub">Live Volume</span>
+          <h2 class="panel-title">Transaction Amount Velocity (₹ INR)</h2>
+          <span class="badge-sub">Normalized Live Volume</span>
         </div>
         <div class="chart-canvas-container">
           <canvas id="amount-chart" width="600" height="180"></canvas>
         </div>
       </div>
 
-      <!-- Blueprint Schema Inspector -->
+      <!-- Blueprint Schema Inspector & Dual Currency Payload -->
       <div class="inspector-section">
         <div class="panel-header sub-header">
-          <h2 class="panel-title">Blueprint Schema Validation</h2>
-          <span class="badge-success-tag" id="schema-status-tag">✓ Schema Validated</span>
+          <h2 class="panel-title">Dual-Currency Payload Inspector</h2>
+          <span class="badge-success-tag" id="schema-status-tag">✓ INR Normalized</span>
         </div>
         
         <!-- Checklist of Schema Attributes -->
         <div class="schema-checklist">
-          <span class="check-item check-pass"><code>transaction_id</code> (UUID)</span>
-          <span class="check-item check-pass"><code>account_id</code> (ACC-XXXX)</span>
-          <span class="check-item check-pass"><code>timestamp</code> (ISO-8601)</span>
-          <span class="check-item check-pass"><code>amount</code> (Float)</span>
-          <span class="check-item check-pass"><code>merchant</code> (String)</span>
-          <span class="check-item check-pass"><code>category</code> (String)</span>
-          <span class="check-item check-pass"><code>channel</code> (ChannelEnum)</span>
+          <span class="check-item check-pass"><code>transaction_id</code></span>
+          <span class="check-item check-pass"><code>account_id</code></span>
+          <span class="check-item check-pass"><code>original_amount</code></span>
+          <span class="check-item check-pass"><code>original_currency</code></span>
+          <span class="check-item check-pass"><code>amount_inr</code> (₹)</span>
+          <span class="check-item check-pass"><code>merchant</code></span>
+          <span class="check-item check-pass"><code>channel</code></span>
         </div>
 
         <div class="payload-viewer">
@@ -218,45 +227,23 @@
             <span>Selected Event Payload</span>
             <span class="mono" id="payload-source-tag">Kafka Offset: --</span>
           </div>
-          <pre class="json-code" id="payload-json-code"><code>// Click any transaction card in the feed to inspect payload</code></pre>
+          <pre class="json-code" id="payload-json-code"><code>// Click any transaction card in the feed to inspect dual-currency details</code></pre>
         </div>
       </div>
 
-      <!-- Pipeline Architecture Blueprint -->
-      <div class="pipeline-section">
+      <!-- Exchange Rate Reference Panel -->
+      <div class="rates-section">
         <div class="panel-header sub-header">
-          <h2 class="panel-title">End-to-End Pipeline Architecture</h2>
+          <h2 class="panel-title">Active Exchange Rates (Base: INR)</h2>
+          <span class="rates-tag">Automated Conversion</span>
         </div>
-        <div class="pipeline-flow">
-          <div class="pipe-node active-node">
-            <div class="pipe-icon">📄</div>
-            <div class="pipe-name">Data Replay</div>
-            <div class="pipe-sub">CSV Source</div>
-          </div>
-          <div class="pipe-connector active-connector">➔</div>
-          <div class="pipe-node active-node">
-            <div class="pipe-icon">⚙️</div>
-            <div class="pipe-name">Producer</div>
-            <div class="pipe-sub">JSON Serializer</div>
-          </div>
-          <div class="pipe-connector active-connector">➔</div>
-          <div class="pipe-node active-node">
-            <div class="pipe-icon">⚡</div>
-            <div class="pipe-name">Kafka Topic</div>
-            <div class="pipe-sub">finx-transactions</div>
-          </div>
-          <div class="pipe-connector active-connector">➔</div>
-          <div class="pipe-node active-node">
-            <div class="pipe-icon">🔍</div>
-            <div class="pipe-name">Consumer</div>
-            <div class="pipe-sub">Validation & Sink</div>
-          </div>
-          <div class="pipe-connector pending-connector">➔</div>
-          <div class="pipe-node future-node">
-            <div class="pipe-icon">🧠</div>
-            <div class="pipe-name">Module 2: ML</div>
-            <div class="pipe-sub">Anomaly Detection</div>
-          </div>
+        <div class="rates-grid" id="rates-grid">
+          <span class="rate-badge">1 USD = ₹86.50</span>
+          <span class="rate-badge">1 EUR = ₹93.80</span>
+          <span class="rate-badge">1 GBP = ₹110.20</span>
+          <span class="rate-badge">1 AED = ₹23.55</span>
+          <span class="rate-badge">1 SGD = ₹64.70</span>
+          <span class="rate-badge">1 CAD = ₹61.20</span>
         </div>
       </div>
     </section>
@@ -265,7 +252,7 @@
   <!-- Footer -->
   <footer class="app-footer">
     <div class="footer-left">
-      FinX • Real-Time Financial Insight & Anomaly Detection System (Blueprint Module 1 Ingestion)
+      FinX • Real-Time Financial Insight & Anomaly Detection System (Multi-Currency Stream Processing)
     </div>
     <div class="footer-right">
       <span>Docker Container: <code>finx-project-kafka-1:9092</code></span>

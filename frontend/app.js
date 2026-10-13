@@ -1,4 +1,4 @@
-// FinX Frontend Controller - Real-Time Streaming & Visualizer
+// FinX Frontend Controller - Real-Time Multi-Currency Streaming & Anomaly Visualizer
 
 document.addEventListener('DOMContentLoaded', () => {
   // State
@@ -13,7 +13,18 @@ document.addEventListener('DOMContentLoaded', () => {
     chartPoints: [],
     lastTimeWindow: Date.now(),
     recentEventCount: 0,
-    throughput: 0.0
+    throughput: 0.0,
+    currentFileName: 'transactions_controlled.csv',
+    renderTimer: null,
+    pendingEvents: [],
+    exchangeRates: {
+      USD: 86.50,
+      EUR: 93.80,
+      GBP: 110.20,
+      AED: 23.55,
+      SGD: 64.70,
+      CAD: 61.20
+    }
   };
 
   // DOM Elements
@@ -21,6 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const valNormalEvents = document.getElementById('val-normal-events');
   const valAnomalies = document.getElementById('val-anomalies-detected');
   const valThroughput = document.getElementById('val-throughput');
+  const valFileNameFooter = document.getElementById('val-file-name-footer');
   const feedContainer = document.getElementById('feed-container');
   const feedEmptyState = document.getElementById('feed-empty-state');
   const feedVisibleCount = document.getElementById('feed-visible-count');
@@ -30,23 +42,27 @@ document.addEventListener('DOMContentLoaded', () => {
   const payloadSourceTag = document.getElementById('payload-source-tag');
 
   // Controls
-  const btnReplayControlled = document.getElementById('btn-replay-controlled');
-  const btnReplayHuge = document.getElementById('btn-replay-huge');
+  const fileInput = document.getElementById('csv-file-input');
+  const btnUpload = document.getElementById('btn-upload-file');
+  const selectedFileBadge = document.getElementById('selected-file-badge');
+  const btnStreamDefault = document.getElementById('btn-stream-default');
   const btnStop = document.getElementById('btn-stop-replay');
   const btnClear = document.getElementById('btn-clear-feed');
 
   // Anomaly Banner Elements
   const anomalyBanner = document.getElementById('anomaly-alert-banner');
   const anomalyTxnId = document.getElementById('anomaly-txn-id');
-  const anomalyAmount = document.getElementById('anomaly-amount');
+  const anomalyInr = document.getElementById('anomaly-inr');
+  const anomalyOrig = document.getElementById('anomaly-orig');
   const anomalyMerchant = document.getElementById('anomaly-merchant');
+  const anomalyRationaleText = document.getElementById('anomaly-rationale-text');
   const btnDismissBanner = document.getElementById('btn-dismiss-banner');
 
   // Canvas
   const canvas = document.getElementById('amount-chart');
   const ctx = canvas.getContext('2d');
 
-  // Speed Buttons
+  // Speed Selector Buttons (Only Realtime 1.0x and 2.0x)
   const speedButtons = document.querySelectorAll('.speed-btn');
   speedButtons.forEach(btn => {
     btn.addEventListener('click', () => {
@@ -63,7 +79,7 @@ document.addEventListener('DOMContentLoaded', () => {
       filterTabs.forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
       state.filter = tab.dataset.filter;
-      renderFeed();
+      renderFeedImmediate();
     });
   });
 
@@ -80,42 +96,87 @@ document.addEventListener('DOMContentLoaded', () => {
     state.normalEvents = 0;
     state.anomalies = 0;
     updateMetrics();
-    renderFeed();
+    renderFeedImmediate();
     drawChart();
     payloadJsonCode.textContent = '// Feed cleared';
   });
 
-  // Replay Triggers
-  btnReplayControlled.addEventListener('click', () => triggerReplay('controlled'));
-  btnReplayHuge.addEventListener('click', () => triggerReplay('huge'));
+  // File Upload Trigger
+  btnUpload.addEventListener('click', () => {
+    fileInput.click();
+  });
+
+  fileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    selectedFileBadge.textContent = file.name;
+    state.currentFileName = file.name;
+    valFileNameFooter.textContent = `File: ${file.name}`;
+
+    uploadAndStream(file);
+  });
+
+  // Sample Stream Trigger
+  btnStreamDefault.addEventListener('click', () => {
+    setPlaying(true);
+    selectedFileBadge.textContent = 'transactions_controlled.csv';
+    state.currentFileName = 'transactions_controlled.csv';
+    valFileNameFooter.textContent = 'File: transactions_controlled.csv';
+
+    fetch(`/api/replay_default?speed=${state.selectedSpeed}`, { method: 'POST' })
+      .then(res => res.json())
+      .catch(err => console.error('Error starting default stream:', err));
+  });
+
+  // Stop Stream Trigger
   btnStop.addEventListener('click', stopReplay);
 
-  function triggerReplay(dataset) {
+  function uploadAndStream(file) {
     setPlaying(true);
-    fetch(`/api/replay?dataset=${dataset}&speed=${state.selectedSpeed}`, { method: 'POST' })
-      .then(res => res.json())
-      .catch(err => console.error('Error triggering replay:', err));
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('speed', state.selectedSpeed.toString());
+
+    fetch('/api/upload', {
+      method: 'POST',
+      body: formData
+    })
+    .then(res => res.json())
+    .catch(err => {
+      console.error('Upload failed:', err);
+      setPlaying(false);
+    });
   }
 
   function stopReplay() {
     fetch('/api/stop', { method: 'POST' })
       .then(res => res.json())
       .then(() => setPlaying(false))
-      .catch(err => console.error('Error stopping replay:', err));
+      .catch(err => console.error('Error stopping stream:', err));
   }
 
   function setPlaying(active) {
     state.isPlaying = active;
     btnStop.disabled = !active;
-    btnReplayControlled.disabled = active;
-    btnReplayHuge.disabled = active;
+    btnUpload.disabled = active;
+    btnStreamDefault.disabled = active;
     engineStatusText.textContent = active ? 'Streaming...' : 'Standby';
     engineStatusText.style.color = active ? '#06b6d4' : '#f8fafc';
   }
 
-  // Format Helpers
-  function formatMoney(amount) {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
+  // Currency Formatters
+  function formatINR(amount) {
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(amount);
+  }
+
+  function formatOriginal(amount, currency) {
+    const curr = (currency || 'USD').toUpperCase();
+    try {
+      return new Intl.NumberFormat('en-US', { style: 'currency', currency: curr, maximumFractionDigits: 2 }).format(amount);
+    } catch {
+      return `${curr} ${Number(amount).toFixed(2)}`;
+    }
   }
 
   function formatTime(isoStr) {
@@ -128,10 +189,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Process Incoming Kafka Event
+  // Handle Event Batching for Lag-Free Ingestion of Innumerable Transactions
   function handleEvent(data) {
     if (data.type === 'replay_started') {
       setPlaying(true);
+      if (data.filename) {
+        selectedFileBadge.textContent = data.filename;
+        valFileNameFooter.textContent = `File: ${data.filename} (${data.total_rows} rows)`;
+      }
       return;
     }
     if (data.type === 'replay_finished') {
@@ -147,14 +212,19 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    // Check if valid transaction payload
     if (!data.transaction_id || data.amount === undefined) return;
 
-    // Detect Anomaly
-    const isAnomaly = data.is_anomaly || data.amount > 5000.0 || (data.merchant && data.merchant.includes('Unknown'));
+    // Normalize INR amount if server hasn't already done so
+    if (data.amount_inr === undefined) {
+      const rate = state.exchangeRates[data.currency] || 86.50;
+      data.amount_inr = Math.round(data.amount * rate * 100) / 100;
+      data.conversion_rate = rate;
+    }
+
+    // Comprehensive Anomaly Detection Check in INR
+    const isAnomaly = data.is_anomaly || data.amount_inr >= 50000.0 || (data.merchant && data.merchant.toLowerCase().includes('unknown'));
     data.is_anomaly = isAnomaly;
 
-    // Update Counters
     state.totalEvents++;
     if (isAnomaly) {
       state.anomalies++;
@@ -163,7 +233,7 @@ document.addEventListener('DOMContentLoaded', () => {
       state.normalEvents++;
     }
 
-    // Throughput tracking
+    // Throughput calculation
     state.recentEventCount++;
     const now = Date.now();
     if (now - state.lastTimeWindow >= 1000) {
@@ -173,35 +243,52 @@ document.addEventListener('DOMContentLoaded', () => {
       valThroughput.innerHTML = `${state.throughput} <span class="metric-unit">msg/s</span>`;
     }
 
-    // Store in State
+    // Keep events in memory (capped to 500 for extreme rendering performance)
     state.events.unshift(data);
-    if (state.events.length > 500) state.events.pop();
+    if (state.events.length > 500) {
+      state.events.pop();
+    }
 
-    // Chart Point
+    // Chart points in INR
     state.chartPoints.push({
       time: now,
-      amount: data.amount,
+      amount: data.amount_inr,
       isAnomaly: isAnomaly
     });
-    if (state.chartPoints.length > 60) state.chartPoints.shift();
+    if (state.chartPoints.length > 60) {
+      state.chartPoints.shift();
+    }
 
-    updateMetrics();
-    renderFeed();
-    drawChart();
-
-    // Select payload if first or anomaly
+    // Auto-select first transaction or anomaly
     if (isAnomaly || state.events.length === 1) {
       selectPayload(data);
+    }
+
+    // Schedule debounced render to prevent browser lag under heavy streams
+    scheduleBatchRender();
+  }
+
+  function scheduleBatchRender() {
+    if (!state.renderTimer) {
+      state.renderTimer = requestAnimationFrame(() => {
+        updateMetrics();
+        renderFeedImmediate();
+        drawChart();
+        state.renderTimer = null;
+      });
     }
   }
 
   function triggerAnomalyAlert(data) {
     anomalyTxnId.textContent = data.transaction_id.substring(0, 13) + '...';
-    anomalyAmount.textContent = formatMoney(data.amount);
+    anomalyInr.textContent = formatINR(data.amount_inr);
+    anomalyOrig.textContent = `(Original: ${formatOriginal(data.amount, data.currency)})`;
     anomalyMerchant.textContent = data.merchant;
+    if (data.anomaly_rationale) {
+      anomalyRationaleText.textContent = data.anomaly_rationale;
+    }
     anomalyBanner.classList.remove('hidden');
 
-    // Auto dismiss after 12s
     setTimeout(() => {
       anomalyBanner.classList.add('hidden');
     }, 12000);
@@ -215,31 +302,32 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function selectPayload(data) {
     payloadSourceTag.textContent = `Kafka Offset: ${data._kafka_offset !== undefined ? data._kafka_offset : 'Live Stream'}`;
-    
-    // Clean display payload (without internal server tags)
+
     const clean = {
       transaction_id: data.transaction_id,
       account_id: data.account_id,
       timestamp: data.timestamp,
-      amount: data.amount,
+      original_amount: data.amount,
+      original_currency: data.currency || 'USD',
+      amount_inr: data.amount_inr,
+      conversion_rate_applied: `1 ${data.currency || 'USD'} = ₹${data.conversion_rate || 86.50}`,
       merchant: data.merchant,
       category: data.category,
-      channel: data.channel
+      channel: data.channel,
+      anomaly_flagged: data.is_anomaly
     };
     if (data.is_anomaly) {
-      clean.is_anomaly_detected = true;
-      clean.anomaly_rationale = "Blueprint Seeded Scenario: Outlier Amount > $5,000 threshold";
+      clean.anomaly_rationale = data.anomaly_rationale || "Normalized value exceeds ₹50,000 threshold or flagged merchant";
     }
 
     payloadJsonCode.textContent = JSON.stringify(clean, null, 2);
 
-    // Highlight selected card
     document.querySelectorAll('.txn-card').forEach(c => {
       c.classList.toggle('selected', c.dataset.id === data.transaction_id);
     });
   }
 
-  function renderFeed() {
+  function renderFeedImmediate() {
     const filtered = state.events.filter(e => {
       if (state.filter === 'anomalies') return e.is_anomaly;
       if (state.filter === 'normal') return !e.is_anomaly;
@@ -257,9 +345,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     feedEmptyState.style.display = 'none';
 
-    // Build cards
+    // Efficiently render max 60 visible cards in viewport
     const fragment = document.createDocumentFragment();
-    filtered.slice(0, 100).forEach((txn, idx) => {
+    filtered.slice(0, 60).forEach((txn, idx) => {
       const card = document.createElement('div');
       card.className = `txn-card ${txn.is_anomaly ? 'anomaly-card' : ''}`;
       card.dataset.id = txn.transaction_id;
@@ -271,8 +359,13 @@ document.addEventListener('DOMContentLoaded', () => {
             <span class="account-badge">${txn.account_id}</span>
             <span class="txn-channel">${txn.channel}</span>
           </div>
-          <div class="txn-amount ${txn.is_anomaly ? 'amount-anomaly' : 'amount-normal'}">
-            ${formatMoney(txn.amount)}
+          <div class="txn-amounts-dual">
+            <div class="amount-inr ${txn.is_anomaly ? 'amount-anomaly' : ''}">
+              ${formatINR(txn.amount_inr)}
+            </div>
+            <div class="amount-orig">
+              ${formatOriginal(txn.amount, txn.currency)}
+            </div>
           </div>
         </div>
         <div class="txn-card-body">
@@ -281,7 +374,7 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
         <div class="txn-card-footer">
           <span>${formatTime(txn.timestamp)}</span>
-          ${txn.is_anomaly ? '<span class="anomaly-pill">⚠️ Seeded Anomaly</span>' : '<span style="color: #64748b">Verified ✓</span>'}
+          ${txn.is_anomaly ? '<span class="anomaly-pill">⚠️ Anomaly Detected</span>' : '<span style="color: #64748b">Verified ✓</span>'}
         </div>
       `;
 
@@ -293,14 +386,13 @@ document.addEventListener('DOMContentLoaded', () => {
     feedContainer.appendChild(fragment);
   }
 
-  // Draw Dynamic Real-Time Chart
+  // Draw Dynamic Real-Time Chart in INR
   function drawChart() {
     const w = canvas.width = canvas.offsetWidth * window.devicePixelRatio;
     const h = canvas.height = canvas.offsetHeight * window.devicePixelRatio;
     ctx.clearRect(0, 0, w, h);
 
     if (state.chartPoints.length < 2) {
-      // Draw placeholder grid
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
       ctx.lineWidth = 1;
       ctx.beginPath();
@@ -310,13 +402,13 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    const maxAmount = Math.max(200, ...state.chartPoints.map(p => p.amount));
+    const maxAmount = Math.max(10000, ...state.chartPoints.map(p => p.amount));
     const padX = 20;
     const padY = 25;
     const chartW = w - padX * 2;
     const chartH = h - padY * 2;
 
-    // Draw baseline grid lines
+    // Grid Lines
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
     ctx.lineWidth = 1;
     for (let r = 0; r <= 3; r++) {
@@ -327,10 +419,9 @@ document.addEventListener('DOMContentLoaded', () => {
       ctx.stroke();
     }
 
-    // Draw bars / line
     const step = chartW / (state.chartPoints.length - 1 || 1);
 
-    // Baseline area fill
+    // Area Fill
     ctx.beginPath();
     state.chartPoints.forEach((p, i) => {
       const x = padX + i * step;
@@ -346,13 +437,12 @@ document.addEventListener('DOMContentLoaded', () => {
     ctx.fillStyle = grad;
     ctx.fill();
 
-    // Plot points
+    // Line & Points
     state.chartPoints.forEach((p, i) => {
       const x = padX + i * step;
       const y = h - padY - ((p.amount / maxAmount) * chartH);
 
       if (p.isAnomaly) {
-        // Red glowing anomaly spike
         ctx.shadowColor = 'rgba(239, 68, 68, 0.9)';
         ctx.shadowBlur = 15;
         ctx.fillStyle = '#ef4444';
@@ -361,12 +451,10 @@ document.addEventListener('DOMContentLoaded', () => {
         ctx.fill();
         ctx.shadowBlur = 0;
 
-        // Label anomaly value
         ctx.fillStyle = '#fca5a5';
         ctx.font = `bold ${10 * window.devicePixelRatio}px JetBrains Mono`;
-        ctx.fillText(`$${p.amount.toFixed(0)}`, x - 20, Math.max(20, y - 10));
+        ctx.fillText(`₹${Math.round(p.amount).toLocaleString('en-IN')}`, x - 25, Math.max(20, y - 10));
       } else {
-        // Cyan normal point
         ctx.fillStyle = '#06b6d4';
         ctx.beginPath();
         ctx.arc(x, y, 2.5 * window.devicePixelRatio, 0, Math.PI * 2);
@@ -377,12 +465,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Connect SSE Stream
   function connectStream() {
-    console.log('[FinX] Establishing SSE stream connection...');
     const eventSource = new EventSource('/api/events');
 
     eventSource.onopen = () => {
       kafkaIndicator.className = 'status-dot dot-online';
-      console.log('[FinX] SSE connected.');
+      console.log('[FinX] Connected to live event stream.');
     };
 
     eventSource.onmessage = (e) => {
@@ -390,17 +477,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const payload = JSON.parse(e.data);
         handleEvent(payload);
       } catch (err) {
-        console.error('Error parsing SSE data:', err);
+        console.error('Error parsing SSE payload:', err);
       }
     };
 
-    eventSource.onerror = (err) => {
+    eventSource.onerror = () => {
       kafkaIndicator.className = 'status-dot dot-pulse';
-      console.warn('[FinX] SSE connection interrupted, retrying...', err);
     };
   }
 
-  // Poll Server Status
+  // Load Status
   function checkStatus() {
     fetch('/api/status')
       .then(res => res.json())
@@ -409,6 +495,9 @@ document.addEventListener('DOMContentLoaded', () => {
           kafkaIndicator.className = 'status-dot dot-online';
         } else {
           kafkaIndicator.className = 'status-dot dot-pulse';
+        }
+        if (data.rates) {
+          state.exchangeRates = data.rates;
         }
         if (data.active_replay && !state.isPlaying) {
           setPlaying(true);
@@ -421,7 +510,6 @@ document.addEventListener('DOMContentLoaded', () => {
       });
   }
 
-  // Load Initial History
   function loadHistory() {
     fetch('/api/history')
       .then(res => res.json())
@@ -437,7 +525,7 @@ document.addEventListener('DOMContentLoaded', () => {
       .catch(err => console.error('Failed to load history:', err));
   }
 
-  // Initialize
+  // Init
   connectStream();
   loadHistory();
   setInterval(checkStatus, 3000);

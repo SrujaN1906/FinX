@@ -650,26 +650,77 @@ body {
   border-radius: 4px;
 }
 
-.txn-amount {
-  font-size: 1.1rem;
+.txn-amounts-dual {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.15rem;
+}
+
+.amount-inr {
+  font-size: 1.15rem;
   font-weight: 700;
   font-family: var(--font-mono);
+  color: #38bdf8;
 }
 
-.amount-normal {
-  color: var(--text-primary);
-}
-
-.amount-anomaly {
+.amount-inr.amount-anomaly {
   color: #fca5a5;
   text-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
 }
 
-.txn-card-body {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 0.85rem;
+.amount-orig {
+  font-size: 0.75rem;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+}
+
+.file-input-hidden {
+  display: none;
+}
+
+.selected-file-badge {
+  font-size: 0.8rem;
+  font-family: var(--font-mono);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px dashed var(--border-subtle);
+  padding: 0.45rem 0.85rem;
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rates-section {
+  padding: 1rem 1.25rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.rates-tag {
+  font-size: 0.7rem;
+  color: var(--accent-emerald);
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.rates-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+}
+
+.rate-badge {
+  font-size: 0.72rem;
+  font-family: var(--font-mono);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  border: 1px solid var(--border-subtle);
+  color: #a5b4fc;
+  text-align: center;
 }
 
 .txn-merchant {

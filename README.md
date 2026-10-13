@@ -23,8 +23,11 @@ This repository contains the **Real-Time Financial Insight and Anomaly Detection
 ```
 
 - **Streaming Backbone:** Apache Kafka 7.4.0 & Zookeeper (Docker Compose).
-- **Data Schemas:** Validated financial transactions (`transaction_id`, `account_id`, `timestamp`, `amount`, `merchant`, `category`, `channel`).
-- **Real-Time Visualization:** Interactive web dashboard with real-time throughput metrics, volume charts, anomaly banner, and JSON schema inspector.
+- **Data Schemas:** Validated financial transactions with automated schema adaptation for custom CSVs.
+- **Multi-Currency Normalizer:** Ingests international transactions (USD, EUR, GBP, AED, SGD, CAD, JPY, etc.) and calculates real-time normalized values in **₹ INR**.
+- **Dual-Currency Display:** Live stream cards and inspector present both original foreign currency amount and converted ₹ INR value.
+- **Fail-Safe Anomaly Detection:** Outliers and suspicious international merchants are caught in normalized INR values (threshold ₹50,000+) without any currency bypass.
+- **Non-Blocking Lag-Free Ingestion:** RequestAnimationFrame event batching ensures smooth 60fps streaming even with large datasets containing innumerable rows.
 
 ---
 
@@ -46,29 +49,10 @@ pip install -r requirements.txt
 python backend/server.py
 ```
 Open **[http://localhost:8080](http://localhost:8080)** in your browser:
-- Click **"Replay Controlled Dataset (10 Txns)"** to see real-time streaming and the seeded anomaly detection.
-- Click **"Stream Scale Dataset (10k Txns)"** to run high-throughput velocity testing.
-
----
-
-## CLI Ingestion & Replay Tools
-
-### Run the Real-Time Terminal Consumer Monitor
-```bash
-python streaming/consumer_monitor.py
-```
-
-### Run Controlled Dataset Replay (Scenario Demonstration)
-Streams 10 transactions with a deliberate anomaly seeded at Transaction #8 ($11,496.98 at Unknown Overseas Merchant):
-```bash
-python streaming/dataset_replay.py --dataset controlled
-```
-
-### Run Huge Dataset Replay (Scale Demonstration)
-Streams 10,000 transactions at rapid pace:
-```bash
-python streaming/dataset_replay.py --dataset huge
-```
+- **Upload File for Detection:** Upload any financial CSV file to stream and inspect transactions live.
+- **Sample Data:** Test with pre-configured repeatable controlled data.
+- **Pace Selection:** Choose between `i. Realtime` or `ii. 2x Speed`.
+- **Anomaly Detection:** Any anomaly (seeded, high-value in INR, or suspicious international merchant) triggers the visual alert banner.
 
 ---
 
