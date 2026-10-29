@@ -47,7 +47,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const fileInput = document.getElementById('csv-file-input');
   const btnUpload = document.getElementById('btn-upload-file');
   const selectedFileBadge = document.getElementById('selected-file-badge');
-  const btnStreamDefault = document.getElementById('btn-stream-default');
+  const btnReplayControlled = document.getElementById('btn-replay-controlled') || document.getElementById('btn-stream-default');
+  const btnReplayHuge = document.getElementById('btn-replay-huge');
   const btnStop = document.getElementById('btn-stop-replay');
   const btnClear = document.getElementById('btn-clear-feed');
 
@@ -64,13 +65,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const canvas = document.getElementById('amount-chart');
   const ctx = canvas.getContext('2d');
 
-  // Speed Selector Buttons (Only Realtime 1.0x and 2.0x)
+  // Speed Selector Buttons (1x Realtime, 2x Speed, 5x Turbo)
   const speedButtons = document.querySelectorAll('.speed-btn');
   speedButtons.forEach(btn => {
     btn.addEventListener('click', () => {
       speedButtons.forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      state.selectedSpeed = parseFloat(btn.dataset.speed);
+      state.selectedSpeed = parseFloat(btn.dataset.speed) || 1.0;
     });
   });
 
@@ -103,37 +104,67 @@ document.addEventListener('DOMContentLoaded', () => {
     payloadJsonCode.textContent = '// Feed cleared';
   });
 
-  // File Upload Trigger
-  btnUpload.addEventListener('click', () => {
-    fileInput.value = '';
-    fileInput.click();
+  // File Upload Handlers (Native input & Drag-and-drop)
+  if (fileInput) {
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+
+      selectedFileBadge.textContent = file.name;
+      state.currentFileName = file.name;
+      valFileNameFooter.textContent = `File: ${file.name}`;
+
+      uploadAndStream(file);
+    });
+  }
+
+  // Drag and Drop Upload Support
+  window.addEventListener('dragover', (e) => {
+    e.preventDefault();
+  });
+  window.addEventListener('drop', (e) => {
+    e.preventDefault();
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const file = e.dataTransfer.files[0];
+      if (file.name.endsWith('.csv')) {
+        selectedFileBadge.textContent = file.name;
+        state.currentFileName = file.name;
+        valFileNameFooter.textContent = `File: ${file.name}`;
+        uploadAndStream(file);
+      }
+    }
   });
 
-  fileInput.addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+  // Replay Controlled (10 Txns) Trigger
+  if (btnReplayControlled) {
+    btnReplayControlled.addEventListener('click', () => {
+      triggerReplay('controlled', 'transactions_controlled.csv');
+    });
+  }
 
-    selectedFileBadge.textContent = file.name;
-    state.currentFileName = file.name;
-    valFileNameFooter.textContent = `File: ${file.name}`;
-
-    uploadAndStream(file);
-  });
-
-  // Sample Stream Trigger
-  btnStreamDefault.addEventListener('click', () => {
-    setPlaying(true);
-    selectedFileBadge.textContent = 'transactions_controlled.csv';
-    state.currentFileName = 'transactions_controlled.csv';
-    valFileNameFooter.textContent = 'File: transactions_controlled.csv';
-
-    fetch(`/api/replay_default?speed=${state.selectedSpeed}`, { method: 'POST' })
-      .then(res => res.json())
-      .catch(err => console.error('Error starting default stream:', err));
-  });
+  // Stream Scale (10k Txns) Trigger
+  if (btnReplayHuge) {
+    btnReplayHuge.addEventListener('click', () => {
+      triggerReplay('huge', 'transactions_huge.csv');
+    });
+  }
 
   // Stop Stream Trigger
   btnStop.addEventListener('click', stopReplay);
+
+  function triggerReplay(dataset, filename) {
+    setPlaying(true);
+    selectedFileBadge.textContent = filename;
+    state.currentFileName = filename;
+    valFileNameFooter.textContent = `File: ${filename}`;
+
+    fetch(`/api/replay?dataset=${dataset}&speed=${state.selectedSpeed}`, { method: 'POST' })
+      .then(res => res.json())
+      .catch(err => {
+        console.error('Error starting replay:', err);
+        setPlaying(false);
+      });
+  }
 
   function uploadAndStream(file) {
     setPlaying(true);
@@ -162,8 +193,12 @@ document.addEventListener('DOMContentLoaded', () => {
   function setPlaying(active) {
     state.isPlaying = active;
     btnStop.disabled = !active;
-    btnUpload.disabled = active;
-    btnStreamDefault.disabled = active;
+    if (btnReplayControlled) btnReplayControlled.disabled = active;
+    if (btnReplayHuge) btnReplayHuge.disabled = active;
+    if (btnUpload) {
+      btnUpload.style.pointerEvents = active ? 'none' : 'auto';
+      btnUpload.style.opacity = active ? '0.5' : '1.0';
+    }
     engineStatusText.textContent = active ? 'Streaming...' : 'Standby';
     engineStatusText.style.color = active ? '#06b6d4' : '#f8fafc';
   }
@@ -410,9 +445,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Draw Dynamic Real-Time Chart in INR
   function drawChart() {
-    const w = canvas.width = canvas.offsetWidth * window.devicePixelRatio;
-    const h = canvas.height = canvas.offsetHeight * window.devicePixelRatio;
+    if (!canvas) return;
+    const parent = canvas.parentElement;
+    const cw = (parent ? parent.clientWidth : canvas.offsetWidth) || 600;
+    const ch = (parent ? parent.clientHeight : canvas.offsetHeight) || 180;
+    const dpr = window.devicePixelRatio || 1;
+
+    canvas.width = cw * dpr;
+    canvas.height = ch * dpr;
+    const w = canvas.width;
+    const h = canvas.height;
     ctx.clearRect(0, 0, w, h);
+
+    if (w < 60 || h < 40) return;
 
     if (state.chartPoints.length < 2) {
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
@@ -427,8 +472,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const maxAmount = Math.max(10000, ...state.chartPoints.map(p => p.amount));
     const padX = 20;
     const padY = 25;
-    const chartW = w - padX * 2;
-    const chartH = h - padY * 2;
+    const chartW = Math.max(10, w - padX * 2);
+    const chartH = Math.max(10, h - padY * 2);
 
     // Grid Lines
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';

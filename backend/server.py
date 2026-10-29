@@ -13,6 +13,7 @@ import time
 import queue
 import uuid
 import random
+import socket
 import threading
 import urllib.request
 from datetime import datetime, timezone
@@ -538,24 +539,42 @@ class FinXHandler(SimpleHTTPRequestHandler):
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
             self.wfile.write(json.dumps({"status": "stopped"}).encode('utf-8'))
-        elif parsed.path == "/api/replay_default":
+        elif parsed.path in ["/api/replay", "/api/replay_default"]:
             params = parse_qs(parsed.query)
+            dataset = params.get('dataset', ['controlled'])[0]
             try:
                 speed = float(params.get('speed', [1.0])[0])
             except Exception:
                 speed = 1.0
-            def_path = os.path.join(DATA_DIR, "transactions_controlled.csv")
+
+            content_len = int(self.headers.get('Content-Length', 0))
+            if content_len > 0:
+                try:
+                    body_bytes = self.rfile.read(content_len)
+                    body_json = json.loads(body_bytes.decode('utf-8'))
+                    if 'dataset' in body_json:
+                        dataset = body_json['dataset']
+                    if 'speed' in body_json:
+                        speed = float(body_json['speed'])
+                except Exception:
+                    pass
+
+            filename = "transactions_huge.csv" if dataset == "huge" else "transactions_controlled.csv"
+            target_path = os.path.join(DATA_DIR, filename)
+
             if active_replay["running"]:
                 active_replay["running"] = False
                 time.sleep(0.2)
-            t = threading.Thread(target=file_streaming_worker, args=(def_path, "transactions_controlled.csv", speed), daemon=True)
+
+            t = threading.Thread(target=file_streaming_worker, args=(target_path, filename, speed), daemon=True)
             active_replay["thread"] = t
             t.start()
+
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
-            self.wfile.write(json.dumps({"status": "started", "filename": "transactions_controlled.csv"}).encode('utf-8'))
+            self.wfile.write(json.dumps({"status": "started", "dataset": dataset, "filename": filename}).encode('utf-8'))
         else:
             self.send_response(404)
             self.end_headers()
@@ -673,14 +692,10 @@ class FinXHandler(SimpleHTTPRequestHandler):
     def handle_api_status(self):
         kafka_ok = False
         try:
-            c = KafkaConsumer(
-                TOPIC,
-                bootstrap_servers=BOOTSTRAP_SERVERS,
-                auto_offset_reset='earliest',
-                consumer_timeout_ms=500
-            )
-            kafka_ok = True
-            c.close()
+            host, port_str = BOOTSTRAP_SERVERS[0].split(':')
+            connect_host = '127.0.0.1' if host in ['localhost', '127.0.0.1'] else host
+            with socket.create_connection((connect_host, int(port_str)), timeout=0.2):
+                kafka_ok = True
         except Exception:
             kafka_ok = False
 
