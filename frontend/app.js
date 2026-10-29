@@ -18,12 +18,14 @@ document.addEventListener('DOMContentLoaded', () => {
     renderTimer: null,
     pendingEvents: [],
     exchangeRates: {
-      USD: 86.50,
-      EUR: 93.80,
-      GBP: 110.20,
-      AED: 23.55,
-      SGD: 64.70,
-      CAD: 61.20
+      USD: 95.12,
+      EUR: 106.06,
+      GBP: 126.78,
+      AED: 25.90,
+      SGD: 74.24,
+      CAD: 67.83,
+      AUD: 66.89,
+      CHF: 114.80
     }
   };
 
@@ -103,6 +105,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // File Upload Trigger
   btnUpload.addEventListener('click', () => {
+    fileInput.value = '';
     fileInput.click();
   });
 
@@ -223,16 +226,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (!data.transaction_id || data.amount === undefined) return;
 
-    // Normalize INR amount if server hasn't already done so
-    if (data.amount_inr === undefined) {
-      const rate = state.exchangeRates[data.currency] || 86.50;
-      data.amount_inr = Math.round(data.amount * rate * 100) / 100;
-      data.conversion_rate = rate;
-    }
+    // Normalize INR amount using active Frankfurter real-time exchange rate
+    const specificCurrency = (data.currency || 'USD').toUpperCase();
+    const activeRate = (data.conversion_rate !== undefined && data.conversion_rate > 0)
+      ? data.conversion_rate 
+      : (state.exchangeRates[specificCurrency] || 95.12);
+
+    data.conversion_rate = activeRate;
+    data.amount_inr = Math.round(data.amount * activeRate * 100) / 100;
 
     // Comprehensive Anomaly Detection Check in INR
     const isAnomaly = data.is_anomaly || data.amount_inr >= 50000.0 || (data.merchant && data.merchant.toLowerCase().includes('unknown'));
     data.is_anomaly = isAnomaly;
+
+    // Re-verify anomaly conversion strictly with active rate
+    if (isAnomaly) {
+      data.amount_inr = Math.round(data.amount * activeRate * 100) / 100;
+      if (!data.anomaly_rationale || data.anomaly_rationale.includes('exceeds')) {
+        data.anomaly_rationale = `High-value anomaly: ${formatINR(data.amount_inr)} (Original: ${formatOriginal(data.amount, data.currency)} @ 1 ${specificCurrency} = ₹${activeRate}) exceeds threshold`;
+      }
+    }
 
     state.totalEvents++;
     if (isAnomaly) {
@@ -552,6 +565,15 @@ document.addEventListener('DOMContentLoaded', () => {
       .catch(() => {
         kafkaIndicator.className = 'status-dot';
       });
+
+    // Also update alert badge count
+    fetch('/api/alerts')
+      .then(res => res.json())
+      .then(d => {
+        const b = document.getElementById('alerts-count-badge');
+        if (b && d.total !== undefined) b.textContent = d.total;
+      })
+      .catch(() => {});
   }
 
   function loadHistory() {

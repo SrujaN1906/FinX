@@ -16,3 +16,9 @@ __pycache__/
 # Nested git clones / scratch
 FinX/
 *.log
+
+# Database files & uploads
+database/*.db
+database/*.sqlite
+uploads/*
+!uploads/.gitkeep

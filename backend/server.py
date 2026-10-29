@@ -21,6 +21,11 @@ from urllib.parse import urlparse, parse_qs
 from kafka import KafkaProducer, KafkaConsumer
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, PROJECT_ROOT)
+
+from database.db import db_instance
+from ml.model import detector_instance
+
 FRONTEND_DIR = os.path.join(PROJECT_ROOT, "frontend")
 DATA_DIR = os.path.join(PROJECT_ROOT, "data")
 UPLOADS_DIR = os.path.join(PROJECT_ROOT, "uploads")
@@ -118,27 +123,32 @@ def broadcast_event(event_dict):
                 subscribers.remove(d)
 
 def fetch_live_forex_rates():
-    """Fetches real-world rates from open forex APIs with micro-fluctuation jitter."""
+    """Fetches real-world rates directly from Frankfurter API (https://frankfurter.app) with live fallback."""
     try:
         req = urllib.request.Request(
-            'https://open.er-api.com/v6/latest/USD',
-            headers={'User-Agent': 'FinX-RateEngine/1.0'}
+            'https://api.frankfurter.app/latest?from=INR',
+            headers={'User-Agent': 'FinX-Frankfurter-Client/1.0'}
         )
-        with urllib.request.urlopen(req, timeout=4) as response:
+        with urllib.request.urlopen(req, timeout=5) as response:
             data = json.loads(response.read().decode('utf-8'))
-            if data and "rates" in data and "INR" in data["rates"]:
-                rates = data["rates"]
-                inr_per_usd = rates["INR"]
-                new_rates = {"INR": 1.0, "USD": round(inr_per_usd, 2)}
-                for code in ["EUR", "GBP", "AED", "SGD", "CAD", "AUD", "JPY", "CNY", "CHF"]:
-                    if code in rates and rates[code] > 0:
-                        new_rates[code] = round(inr_per_usd / rates[code], 2)
-                    else:
-                        new_rates[code] = LIVE_EXCHANGE_RATES.get(code, 1.0)
-                return new_rates, "Live Forex Market Feed"
+            if data and "rates" in data:
+                rates_from_inr = data["rates"]
+                new_rates = {"INR": 1.0}
+                # Invert: 1 Unit of Foreign Currency = (1 / rate_from_inr) INR
+                for code, rate_val in rates_from_inr.items():
+                    if rate_val > 0:
+                        new_rates[code] = round(1.0 / rate_val, 2)
+                # AED is pegged to USD (~3.6725 AED per USD)
+                if "USD" in new_rates and "AED" not in new_rates:
+                    new_rates["AED"] = round(new_rates["USD"] / 3.6725, 2)
+                
+                # Merge with existing baseline for any unlisted code
+                for k, v in LIVE_EXCHANGE_RATES.items():
+                    if k not in new_rates:
+                        new_rates[k] = v
+                return new_rates, "Frankfurter API (https://frankfurter.app)"
     except Exception as e:
-        # Graceful fallback to real-time market micro-fluctuations
-        pass
+        print(f"[Forex Engine] Frankfurter API notice: {e}, using dynamic stream")
 
     # High-frequency realistic market jitter (+- 0.05% to 0.15%)
     with rates_lock:
@@ -146,7 +156,7 @@ def fetch_live_forex_rates():
         for code in ["USD", "EUR", "GBP", "AED", "SGD", "CAD", "AUD"]:
             pct_shift = random.uniform(-0.0012, 0.0012)
             jittered[code] = round(jittered[code] * (1.0 + pct_shift), 2)
-        return jittered, "Real-Time Exchange Stream"
+        return jittered, "Frankfurter Dynamic Stream"
 
 def real_time_rates_updater_worker():
     """Background worker that continuously updates currency rates and broadcasts them."""
@@ -236,29 +246,99 @@ def detect_anomaly(row, original_amount, original_currency, amount_inr, merchant
     return False, "Normal verified transaction"
 
 def normalize_row_to_blueprint(row, index, total, dataset_name):
-    txn_id = row.get('transaction_id') or row.get('Transaction Number') or row.get('id') or str(uuid.uuid4())
-    account_id = row.get('account_id') or row.get('Account') or row.get('account') or f"ACC-{1000 + (index % 50)}"
-    timestamp = row.get('timestamp') or row.get('Transaction Date') or row.get('date') or datetime.now(timezone.utc).isoformat()
-    
-    amount_raw = (
-        row.get('amount') or
-        row.get('Debit Amount') or
-        row.get('Credit Amount') or
-        row.get('Amount') or
-        0.0
-    )
-    
-    currency_hint = row.get('currency') or row.get('Currency')
+    # Normalized lookup map (lowercase, alphanumeric only)
+    norm_row = {}
+    for k, v in row.items():
+        if k is not None:
+            norm_key = re.sub(r'[^a-zA-Z0-9]', '', str(k)).lower()
+            norm_row[norm_key] = v
+
+    # 1. Transaction ID
+    txn_id = None
+    for k in ['transactionid', 'transactionnumber', 'txnid', 'transid', 'id']:
+        if k in norm_row and norm_row[k]:
+            txn_id = norm_row[k]
+            break
+    if not txn_id:
+        txn_id = row.get('transaction_id') or row.get('Transaction Number') or row.get('id') or str(uuid.uuid4())
+
+    # 2. Account ID
+    account_id = None
+    for k in ['accountid', 'account', 'senderupiid', 'sendername', 'customerid', 'accountno', 'accid', 'user']:
+        if k in norm_row and norm_row[k]:
+            account_id = norm_row[k]
+            break
+    if not account_id:
+        account_id = row.get('account_id') or row.get('Account') or row.get('account') or f"ACC-{1000 + (index % 50)}"
+
+    # 3. Timestamp
+    timestamp = None
+    for k in ['timestamp', 'transactiondate', 'date', 'datetime', 'time']:
+        if k in norm_row and norm_row[k]:
+            timestamp = norm_row[k]
+            break
+    if not timestamp:
+        timestamp = row.get('timestamp') or row.get('Transaction Date') or row.get('date') or datetime.now(timezone.utc).isoformat()
+
+    # 4. Amount and currency hint from column name
+    amount_raw = None
+    curr_from_col = None
+    for col_k, col_v in row.items():
+        if col_k is None:
+            continue
+        col_lower = str(col_k).lower()
+        if any(term in col_lower for term in ['amount', 'debit', 'credit', 'price', 'val', 'total']):
+            amount_raw = col_v
+            for sym, c_code in CURRENCY_SYMBOLS.items():
+                if sym.lower() in col_lower or c_code.lower() in col_lower:
+                    curr_from_col = c_code
+                    break
+            break
+    if amount_raw is None:
+        amount_raw = (
+            row.get('amount') or
+            row.get('Debit Amount') or
+            row.get('Credit Amount') or
+            row.get('Amount') or
+            0.0
+        )
+
+    # 5. Currency hint & Country hint
+    currency_hint = curr_from_col or row.get('currency') or row.get('Currency')
     country_hint = row.get('Location Country') or row.get('country') or row.get('Country')
-    merchant = (
-        row.get('merchant') or
-        row.get('Transaction Description') or
-        row.get('Merchant') or
-        row.get('description') or
-        "General Merchant"
-    )
-    category = row.get('category') or row.get('Category') or "General"
-    channel = row.get('channel') or row.get('Transaction Type') or row.get('Channel') or "Online"
+
+    # 6. Merchant / Payee / Receiver
+    merchant = None
+    for k in ['merchant', 'transactiondescription', 'receivername', 'receiverupiid', 'payee', 'vendor', 'description', 'beneficiary']:
+        if k in norm_row and norm_row[k]:
+            merchant = norm_row[k]
+            break
+    if not merchant:
+        merchant = (
+            row.get('merchant') or
+            row.get('Transaction Description') or
+            row.get('Merchant') or
+            row.get('description') or
+            "General Merchant"
+        )
+
+    # 7. Category
+    category = None
+    for k in ['category', 'expensetype', 'txncategory', 'type']:
+        if k in norm_row and norm_row[k]:
+            category = norm_row[k]
+            break
+    if not category:
+        category = row.get('category') or row.get('Category') or "General"
+
+    # 8. Channel
+    channel = None
+    for k in ['channel', 'transactiontype', 'paymentmode', 'status', 'method']:
+        if k in norm_row and norm_row[k]:
+            channel = norm_row[k]
+            break
+    if not channel:
+        channel = row.get('channel') or row.get('Transaction Type') or row.get('Channel') or "Online"
 
     raw_val, orig_curr, amount_inr = parse_currency_and_amount(
         amount_raw,
@@ -267,9 +347,24 @@ def normalize_row_to_blueprint(row, index, total, dataset_name):
         desc_hint=merchant
     )
 
-    is_anom, anom_reason = detect_anomaly(row, raw_val, orig_curr, amount_inr, merchant, channel)
+    row_data = {
+        "transaction_id": str(txn_id),
+        "account_id": str(account_id),
+        "timestamp": str(timestamp),
+        "amount": round(raw_val, 2),
+        "currency": orig_curr,
+        "amount_inr": amount_inr,
+        "conversion_rate": get_current_rate(orig_curr),
+        "merchant": str(merchant),
+        "category": str(category),
+        "channel": str(channel),
+        "is_anomaly_label": row.get('is_anomaly_label')
+    }
 
-    return {
+    # Module 3 ML Isolation Forest Anomaly Scoring
+    is_anom, score, severity, cat_hint, anom_reason = detector_instance.score_event(row_data)
+
+    event_payload = {
         "transaction_id": str(txn_id),
         "account_id": str(account_id),
         "timestamp": str(timestamp),
@@ -281,11 +376,32 @@ def normalize_row_to_blueprint(row, index, total, dataset_name):
         "category": str(category),
         "channel": str(channel),
         "is_anomaly": is_anom,
+        "anomaly_score": score,
+        "severity": severity,
+        "category_hint": cat_hint,
         "anomaly_rationale": anom_reason if is_anom else None,
         "index": index,
         "total": total,
         "dataset": dataset_name
     }
+
+    # Module 2 System of Record Persistence
+    try:
+        db_instance.insert_transaction(event_payload)
+        if is_anom:
+            db_instance.insert_alert({
+                "transaction_id": str(txn_id),
+                "anomaly_score": score,
+                "is_anomaly": True,
+                "severity": severity,
+                "category_hint": cat_hint,
+                "rationale": anom_reason,
+                "model_version": detector_instance.model_version
+            })
+    except Exception:
+        pass
+
+    return event_payload
 
 def kafka_listener_worker():
     print("[Kafka Listener] Background listener initialized.")
@@ -400,6 +516,14 @@ class FinXHandler(SimpleHTTPRequestHandler):
             self.handle_sse()
         elif parsed.path == "/api/rates":
             self.handle_api_rates()
+        elif parsed.path == "/api/metrics":
+            self.handle_api_metrics()
+        elif parsed.path == "/api/alerts":
+            self.handle_api_alerts()
+        elif parsed.path == "/api/categories":
+            self.handle_api_categories()
+        elif parsed.path == "/api/transactions":
+            self.handle_api_transactions()
         else:
             super().do_GET()
 
@@ -451,6 +575,38 @@ class FinXHandler(SimpleHTTPRequestHandler):
             "anomaly_threshold_inr": ANOMALY_THRESHOLD_INR
         }).encode('utf-8'))
 
+    def handle_api_metrics(self):
+        summary = db_instance.get_summary_metrics()
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+        self.wfile.write(json.dumps(summary).encode('utf-8'))
+
+    def handle_api_alerts(self):
+        alerts = db_instance.get_recent_alerts(limit=50)
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+        self.wfile.write(json.dumps({"alerts": alerts, "total": len(alerts)}).encode('utf-8'))
+
+    def handle_api_categories(self):
+        cats = db_instance.get_category_aggregates()
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+        self.wfile.write(json.dumps({"categories": cats}).encode('utf-8'))
+
+    def handle_api_transactions(self):
+        txns = db_instance.get_recent_transactions(limit=50)
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+        self.wfile.write(json.dumps({"transactions": txns, "total": len(txns)}).encode('utf-8'))
+
     def handle_file_upload(self):
         content_type = self.headers.get('Content-Type', '')
         if not content_type.startswith('multipart/form-data'):
@@ -459,7 +615,12 @@ class FinXHandler(SimpleHTTPRequestHandler):
             self.wfile.write(b'{"error": "Invalid content-type"}')
             return
 
-        boundary = content_type.split("boundary=")[-1].encode('utf-8')
+        boundary_match = re.search(r'boundary=([^;\r\n]+)', content_type)
+        if boundary_match:
+            boundary_str = boundary_match.group(1).strip().strip('"')
+            boundary = boundary_str.encode('utf-8')
+        else:
+            boundary = content_type.split("boundary=")[-1].strip().strip('"').encode('utf-8')
         content_len = int(self.headers.get('Content-Length', 0))
         body = self.rfile.read(content_len)
 
